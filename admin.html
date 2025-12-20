@@ -2,57 +2,79 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Admin Dashboard - Smart City</title>
+    <title>Admin - Dashboard Cloud</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
     <style>
         body { font-family: sans-serif; margin: 0; display: flex; height: 100vh; background: #222; color: white; }
         #sidebar { width: 350px; background: #1a1a1a; padding: 20px; overflow-y: auto; border-right: 1px solid #444; }
         #map { flex: 1; }
-        .alert-card { background: #333; padding: 15px; margin-bottom: 15px; border-radius: 8px; cursor: pointer; border-left: 5px solid #22c55e; }
-        .alert-card:hover { background: #444; }
-        .alert-card b { color: #22c55e; font-size: 1.1em; }
+        .alert-card { background: #333; padding: 15px; margin-bottom: 15px; border-radius: 8px; border-left: 5px solid #22c55e; }
+        button { background: #ff4757; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; margin-top: 10px; }
     </style>
 </head>
 <body>
-
     <div id="sidebar">
-        <h2>📋 Réclamations Reçues</h2>
-        <div id="alert-list">En attente de réclamations...</div>
+        <h2>📋 Réclamations (Cloud)</h2>
+        <div id="alert-list">En attente de données...</div>
     </div>
-
     <div id="map"></div>
 
-   <script>
-    const map = L.map('map').setView([0, 0], 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    <script>
+        // CONFIGURATION FIREBASE (Même que l'utilisateur)
+        const firebaseConfig = { databaseURL: "https://console.firebase.google.com/project/smartcity-b4b77/database/smartcity-b4b77-default-rtdb/data/~2F" };
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
 
-    const alertList = document.getElementById("alert-list");
+        const map = L.map('map').setView([0, 0], 2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    // Fonction pour ajouter une alerte à l'interface
-    function displayAlert(data) {
-        if (alertList.innerText.includes("En attente")) alertList.innerHTML = "";
+        const alertList = document.getElementById("alert-list");
 
-        const card = document.createElement("div");
-        card.className = "alert-card";
-        card.innerHTML = `
-            <b>${data.type.toUpperCase()}</b><br>
-            <small>${data.time}</small>
-        `;
-        card.onclick = () => map.setView([data.lat, data.lng], 18);
-        alertList.prepend(card);
+        // Écouter les données en temps réel depuis Firebase
+        database.ref('reclamations').on('value', (snapshot) => {
+            const data = snapshot.val();
+            alertList.innerHTML = "";
+            map.eachLayer((layer) => { if (layer instanceof L.Marker) map.removeLayer(layer); });
 
-        L.marker([data.lat, data.lng]).addTo(map).bindPopup(data.type);
-    }
+            if (!data) {
+                alertList.innerHTML = "Aucune réclamation en cours.";
+                return;
+            }
 
-    // A. Charger les réclamations sauvegardées au démarrage
-    const savedAlerts = JSON.parse(localStorage.getItem('smart_city_history')) || [];
-    savedAlerts.forEach(alert => displayAlert(alert));
+            for (let id in data) {
+                const rec = data[id];
+                
+                // Création du marqueur sur la carte
+                const marker = L.marker([rec.lat, rec.lng]).addTo(map)
+                    .bindPopup(`<b>${rec.type}</b><br>${rec.time}`);
 
-    // B. Écouter les nouvelles réclamations en temps réel
-    const bc = new BroadcastChannel('smart_city_alerts');
-    bc.onmessage = (event) => displayAlert(event.data);
-</script>
+                // Création de la carte dans la liste
+                const card = document.createElement("div");
+                card.className = "alert-card";
+                card.innerHTML = `
+                    <b>${rec.type.toUpperCase()}</b><br>
+                    <small>${rec.time}</small><br>
+                    <button onclick="deleteRec('${id}')">Valider / Régler</button>
+                `;
+                card.style.cursor = "pointer";
+                card.onclick = (e) => { 
+                    if(e.target.tagName !== 'BUTTON') {
+                        map.setView([rec.lat, rec.lng], 18);
+                        marker.openPopup();
+                    }
+                };
+                alertList.prepend(card);
+            }
+        });
+
+        function deleteRec(id) {
+            if(confirm("Supprimer cette réclamation ?")) {
+                database.ref('reclamations/' + id).remove();
+            }
+        }
+    </script>
 </body>
-
 </html>
