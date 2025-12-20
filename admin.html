@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard - Smart City</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 0; display: flex; height: 100vh; background: #222; color: white; }
+        #sidebar { width: 350px; background: #1a1a1a; padding: 20px; overflow-y: auto; border-right: 1px solid #444; }
+        #map { flex: 1; }
+        .alert-card { background: #333; padding: 15px; margin-bottom: 15px; border-radius: 8px; cursor: pointer; border-left: 5px solid #22c55e; }
+        .alert-card:hover { background: #444; }
+        .alert-card b { color: #22c55e; font-size: 1.1em; }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h2>📋 Réclamations Reçues</h2>
+        <div id="alert-list">En attente de réclamations...</div>
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        // Initialisation de la carte centrée sur le monde
+        const map = L.map('map').setView([0, 0], 2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        const alertList = document.getElementById("alert-list");
+        const bc = new BroadcastChannel('smart_city_alerts');
+
+        // Écoute les réclamations envoyées par l'autre onglet
+        bc.onmessage = (event) => {
+            const data = event.data;
+            if (alertList.innerText.includes("En attente")) alertList.innerHTML = "";
+
+            // Créer une carte d'alerte dans la barre latérale
+            const card = document.createElement("div");
+            card.className = "alert-card";
+            card.innerHTML = `
+                <b>${data.type.toUpperCase()}</b><br>
+                <span>Mode: ${data.mode}</span><br>
+                <small>Heure: ${data.time}</small>
+            `;
+
+            // Action au clic : centrer la carte sur la localisation
+            card.onclick = () => {
+                map.setView([data.lat, data.lng], 18);
+            };
+
+            alertList.prepend(card);
+
+            // Ajouter un marqueur sur la carte
+            const marker = L.marker([data.lat, data.lng]).addTo(map)
+                .bindPopup(`<b>${data.type}</b><br>${data.time}`)
+                .openPopup();
+            
+            // Zoomer automatiquement vers la nouvelle alerte
+            map.setView([data.lat, data.lng], 15);
+        };
+    </script>
+</body>
+</html>

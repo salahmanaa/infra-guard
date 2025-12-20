@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Road & Waste AI Suite</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <style>
+        body { margin: 0; padding: 20px; font-family: sans-serif; background: #1a1a1a; color: #fff; text-align: center; }
+        .controls { margin-bottom: 20px; display: flex; justify-content: center; gap: 10px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border: none; border-radius: 5px; background: #444; color: #fff; }
+        button.active { background: #22c55e; }
+        #webcam-container { margin: 10px auto; border: 2px solid #555; display: inline-block; border-radius: 10px; overflow: hidden; }
+        #result { font-size: 24px; font-weight: bold; margin-top: 15px; color: #22c55e; }
+        /* Style pour le bouton de réclamation */
+        .btn-claim { background: #ff4757; color: white; padding: 15px 30px; font-weight: bold; margin-top: 20px; display: none; }
+    </style>
+</head>
+<body>
+    <h1>🏙️ Smart City Monitor</h1>
+    
+    <div class="controls">
+        <button id="roadBtn" onclick="switchMode('road')">Scan Road (Clean/Dirty)</button>
+        <button id="wasteBtn" onclick="switchMode('waste')">Scan Waste (Plastic/Metal/cardboard)</button>
+    </div>
+
+    <div id="webcam-container"></div>
+    <div id="result">Waiting for selection...</div>
+    <div id="confidence"></div>
+
+    <button id="claimBtn" class="btn-claim" onclick="sendReclamation()">🚨 ENVOYER RÉCLAMATION</button>
+
+    <script type="text/javascript">
+        let model, webcam, labelContainer, maxPredictions;
+        let currentMode = "";
+        let currentResult = "";
+        
+        // Canal pour envoyer les données à la page Admin
+        const bc = new BroadcastChannel('smart_city_alerts');
+
+        const paths = {
+            road: "./models/road/",
+            waste: "./models/waste/"
+        };
+
+        async function switchMode(mode) {
+            currentMode = mode;
+            document.getElementById("roadBtn").className = (mode === 'road') ? "active" : "";
+            document.getElementById("wasteBtn").className = (mode === 'waste') ? "active" : "";
+            document.getElementById("result").innerText = "Loading " + mode + " model...";
+
+            const URL = paths[mode];
+            
+            try {
+                model = await tmImage.load(URL + "model.json", URL + "metadata.json");
+                maxPredictions = model.getTotalClasses();
+
+                if (!webcam) {
+                    webcam = new tmImage.Webcam(320, 320, false);
+                    await webcam.setup({ facingMode: "environment" });
+                    await webcam.play();
+                    document.getElementById("webcam-container").appendChild(webcam.canvas);
+                    window.requestAnimationFrame(loop);
+                }
+                
+                document.getElementById("result").innerText = "Ready: Scan " + mode;
+                document.getElementById("claimBtn").style.display = "inline-block";
+            } catch (err) {
+                document.getElementById("result").innerText = "Error loading model.";
+                console.error(err);
+            }
+        }
+
+        async function loop() {
+            webcam.update();
+            await predict();
+            window.requestAnimationFrame(loop);
+        }
+
+        async function predict() {
+            if (!model) return;
+            const predictions = await model.predict(webcam.canvas);
+            let bestMatch = predictions.reduce((a, b) => a.probability > b.probability ? a : b);
+
+            currentResult = bestMatch.className; // Stocke le résultat actuel
+            document.getElementById("result").innerText = currentResult.toUpperCase();
+            document.getElementById("confidence").innerText = 
+                "Confidence: " + (bestMatch.probability * 100).toFixed(1) + "%";
+        }
+
+        // Fonction pour envoyer la localisation réclamée par l'utilisateur
+        function sendReclamation() {
+            if (!navigator.geolocation) {
+                alert("Géolocalisation non supportée");
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition((position) => {
+                const alertData = {
+                    type: currentResult,
+                    mode: currentMode,
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude,
+                    time: new Date().toLocaleTimeString()
+                };
+
+                // Envoi les données vers le canal
+                bc.postMessage(alertData);
+                alert("Réclamation envoyée à l'administrateur !");
+            }, (error) => {
+                alert("Erreur de localisation : " + error.message);
+            });
+        }
+    </script>
+</body>
+</html>
