@@ -91,27 +91,32 @@
 
         // Fonction pour envoyer la localisation réclamée par l'utilisateur
         function sendReclamation() {
-            if (!navigator.geolocation) {
-                alert("Géolocalisation non supportée");
-                return;
-            }
+    if (!navigator.geolocation) {
+        alert("Géolocalisation non supportée");
+        return;
+    }
 
-            navigator.geolocation.getCurrentPosition((position) => {
-                const alertData = {
-                    type: currentResult,
-                    mode: currentMode,
-                    lat: position.coords.latitude,
-                    lng: position.coords.longitude,
-                    time: new Date().toLocaleTimeString()
-                };
+    navigator.geolocation.getCurrentPosition((position) => {
+        const alertData = {
+            type: currentResult,
+            mode: currentMode,
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            time: new Date().toLocaleString() // Date et heure complètes
+        };
 
-                // Envoi les données vers le canal
-                bc.postMessage(alertData);
-                alert("Réclamation envoyée à l'administrateur !");
-            }, (error) => {
-                alert("Erreur de localisation : " + error.message);
-            });
-        }
+        // 1. Sauvegarde dans le stockage du navigateur
+        let history = JSON.parse(localStorage.getItem('smart_city_history')) || [];
+        history.push(alertData);
+        localStorage.setItem('smart_city_history', JSON.stringify(history));
+
+        // 2. Envoi en temps réel (si l'admin est déjà ouvert)
+        const bc = new BroadcastChannel('smart_city_alerts');
+        bc.postMessage(alertData);
+
+        alert("Réclamation enregistrée et envoyée !");
+    });
+}
     </script>
 </body>
 </html>
