@@ -23,45 +23,36 @@
 
     <div id="map"></div>
 
-    <script>
-        // Initialisation de la carte centrée sur le monde
-        const map = L.map('map').setView([0, 0], 2);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
-        }).addTo(map);
+   <script>
+    const map = L.map('map').setView([0, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        const alertList = document.getElementById("alert-list");
-        const bc = new BroadcastChannel('smart_city_alerts');
+    const alertList = document.getElementById("alert-list");
 
-        // Écoute les réclamations envoyées par l'autre onglet
-        bc.onmessage = (event) => {
-            const data = event.data;
-            if (alertList.innerText.includes("En attente")) alertList.innerHTML = "";
+    // Fonction pour ajouter une alerte à l'interface
+    function displayAlert(data) {
+        if (alertList.innerText.includes("En attente")) alertList.innerHTML = "";
 
-            // Créer une carte d'alerte dans la barre latérale
-            const card = document.createElement("div");
-            card.className = "alert-card";
-            card.innerHTML = `
-                <b>${data.type.toUpperCase()}</b><br>
-                <span>Mode: ${data.mode}</span><br>
-                <small>Heure: ${data.time}</small>
-            `;
+        const card = document.createElement("div");
+        card.className = "alert-card";
+        card.innerHTML = `
+            <b>${data.type.toUpperCase()}</b><br>
+            <small>${data.time}</small>
+        `;
+        card.onclick = () => map.setView([data.lat, data.lng], 18);
+        alertList.prepend(card);
 
-            // Action au clic : centrer la carte sur la localisation
-            card.onclick = () => {
-                map.setView([data.lat, data.lng], 18);
-            };
+        L.marker([data.lat, data.lng]).addTo(map).bindPopup(data.type);
+    }
 
-            alertList.prepend(card);
+    // A. Charger les réclamations sauvegardées au démarrage
+    const savedAlerts = JSON.parse(localStorage.getItem('smart_city_history')) || [];
+    savedAlerts.forEach(alert => displayAlert(alert));
 
-            // Ajouter un marqueur sur la carte
-            const marker = L.marker([data.lat, data.lng]).addTo(map)
-                .bindPopup(`<b>${data.type}</b><br>${data.time}`)
-                .openPopup();
-            
-            // Zoomer automatiquement vers la nouvelle alerte
-            map.setView([data.lat, data.lng], 15);
-        };
-    </script>
+    // B. Écouter les nouvelles réclamations en temps réel
+    const bc = new BroadcastChannel('smart_city_alerts');
+    bc.onmessage = (event) => displayAlert(event.data);
+</script>
 </body>
+
 </html>
