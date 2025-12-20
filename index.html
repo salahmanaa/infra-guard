@@ -1,43 +1,44 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Road & Waste AI Suite</title>
+    <title>Smart City - Scanner</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
     <style>
         body { margin: 0; padding: 20px; font-family: sans-serif; background: #1a1a1a; color: #fff; text-align: center; }
         .controls { margin-bottom: 20px; display: flex; justify-content: center; gap: 10px; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border: none; border-radius: 5px; background: #444; color: #fff; }
+        button { padding: 12px 20px; font-size: 16px; cursor: pointer; border: none; border-radius: 8px; background: #444; color: #fff; }
         button.active { background: #22c55e; }
         #webcam-container { margin: 10px auto; border: 2px solid #555; display: inline-block; border-radius: 10px; overflow: hidden; }
         #result { font-size: 24px; font-weight: bold; margin-top: 15px; color: #22c55e; }
-        /* Style pour le bouton de réclamation */
-        .btn-claim { background: #ff4757; color: white; padding: 15px 30px; font-weight: bold; margin-top: 20px; display: none; }
+        .btn-claim { background: #ff4757 !important; color: white; width: 100%; max-width: 320px; padding: 15px; font-weight: bold; margin-top: 20px; display: none; }
     </style>
 </head>
 <body>
     <h1>🏙️ Smart City Monitor</h1>
     
     <div class="controls">
-        <button id="roadBtn" onclick="switchMode('road')">Scan Road (Clean/Dirty)</button>
-        <button id="wasteBtn" onclick="switchMode('waste')">Scan Waste (Plastic/Metal/cardboard)</button>
+        <button id="roadBtn" onclick="switchMode('road')">Route (Propre/Sale)</button>
+        <button id="wasteBtn" onclick="switchMode('waste')">Déchets (Plastique...)</button>
     </div>
 
     <div id="webcam-container"></div>
-    <div id="result">Waiting for selection...</div>
+    <div id="result">Initialisez un mode...</div>
     <div id="confidence"></div>
 
     <button id="claimBtn" class="btn-claim" onclick="sendReclamation()">🚨 ENVOYER RÉCLAMATION</button>
 
     <script type="text/javascript">
-        let model, webcam, labelContainer, maxPredictions;
-        let currentMode = "";
-        let currentResult = "";
-        
-        // Canal pour envoyer les données à la page Admin
-        const bc = new BroadcastChannel('smart_city_alerts');
+        // CONFIGURATION FIREBASE
+        const firebaseConfig = { databaseURL: "https://console.firebase.google.com/project/smartcity-b4b77/database/smartcity-b4b77-default-rtdb/data/~2F" };
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        let model, webcam, maxPredictions, currentMode = "", currentResult = "";
 
         const paths = {
             road: "./models/road/",
@@ -48,10 +49,9 @@
             currentMode = mode;
             document.getElementById("roadBtn").className = (mode === 'road') ? "active" : "";
             document.getElementById("wasteBtn").className = (mode === 'waste') ? "active" : "";
-            document.getElementById("result").innerText = "Loading " + mode + " model...";
+            document.getElementById("result").innerText = "Chargement...";
 
             const URL = paths[mode];
-            
             try {
                 model = await tmImage.load(URL + "model.json", URL + "metadata.json");
                 maxPredictions = model.getTotalClasses();
@@ -63,12 +63,10 @@
                     document.getElementById("webcam-container").appendChild(webcam.canvas);
                     window.requestAnimationFrame(loop);
                 }
-                
-                document.getElementById("result").innerText = "Ready: Scan " + mode;
+                document.getElementById("result").innerText = "Prêt à scanner";
                 document.getElementById("claimBtn").style.display = "inline-block";
             } catch (err) {
-                document.getElementById("result").innerText = "Error loading model.";
-                console.error(err);
+                document.getElementById("result").innerText = "Erreur de chargement";
             }
         }
 
@@ -82,72 +80,33 @@
             if (!model) return;
             const predictions = await model.predict(webcam.canvas);
             let bestMatch = predictions.reduce((a, b) => a.probability > b.probability ? a : b);
-
-            currentResult = bestMatch.className; // Stocke le résultat actuel
+            currentResult = bestMatch.className;
             document.getElementById("result").innerText = currentResult.toUpperCase();
-            document.getElementById("confidence").innerText = 
-                "Confidence: " + (bestMatch.probability * 100).toFixed(1) + "%";
+            document.getElementById("confidence").innerText = "Confiance: " + (bestMatch.probability * 100).toFixed(1) + "%";
         }
 
-        // Fonction pour envoyer la localisation réclamée par l'utilisateur
-       function sendReclamation() {
-    if (!navigator.geolocation) {
-        alert("La géolocalisation n'est pas supportée par votre navigateur.");
-        return;
-    }
+        function sendReclamation() {
+            if (!navigator.geolocation) return;
+            
+            // Paramètres pour haute précision GPS
+            const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
 
-    // Configuration pour forcer l'utilisation du GPS (Haute Précision)
-    const options = {
-        enableHighAccuracy: true, // Force l'utilisation du GPS au lieu du Wi-Fi/IP
-        timeout: 10000,           // Temps maximum d'attente (10 secondes)
-        maximumAge: 0             // Ne pas utiliser de position mise en cache
-    };
+            navigator.geolocation.getCurrentPosition((pos) => {
+                const alertData = {
+                    type: currentResult,
+                    lat: pos.coords.latitude,
+                    lng: pos.coords.longitude,
+                    time: new Date().toLocaleString(),
+                    accuracy: pos.coords.accuracy
+                };
 
-    navigator.geolocation.getCurrentPosition(
-        (position) => {
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
-            const accuracy = position.coords.accuracy; // Précision en mètres
+                // Envoi à la base de données Cloud Firebase
+                database.ref('reclamations').push(alertData)
+                .then(() => alert("Succès : Envoyé au Cloud !"))
+                .catch((e) => alert("Erreur Cloud: " + e));
 
-            console.log(`Position précise à ${accuracy} mètres.`);
-
-            // Objet de données à envoyer
-            const alertData = {
-                id: Date.now(),
-                type: currentResult,
-                lat: lat,
-                lng: lng,
-                time: new Date().toLocaleString()
-            };
-
-            // Suite de votre logique (LocalStorage + BroadcastChannel)
-            let history = JSON.parse(localStorage.getItem('smart_city_history')) || [];
-            history.push(alertData);
-            localStorage.setItem('smart_city_history', JSON.stringify(history));
-
-            const bc = new BroadcastChannel('smart_city_alerts');
-            bc.postMessage(alertData);
-
-            alert("Réclamation envoyée avec une précision de " + Math.round(accuracy) + "m");
-        },
-        (error) => {
-            // Gestion des erreurs spécifiques
-            switch(error.code) {
-                case error.PERMISSION_DENIED:
-                    alert("Erreur : Vous devez autoriser l'accès au GPS.");
-                    break;
-                case error.POSITION_UNAVAILABLE:
-                    alert("Erreur : Emplacement non disponible.");
-                    break;
-                case error.TIMEOUT:
-                    alert("Erreur : Temps d'attente dépassé (vérifiez votre signal GPS).");
-                    break;
-            }
-        }, 
-        options // Application des options de précision
-    );
-}
+            }, (err) => alert("Erreur GPS: " + err.message), options);
+        }
     </script>
 </body>
 </html>
-
